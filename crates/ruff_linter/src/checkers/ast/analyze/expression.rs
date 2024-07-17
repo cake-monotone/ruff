@@ -110,6 +110,12 @@ pub(crate) fn expression(expr: &Expr, checker: &mut Checker) {
                 ruff::rules::never_union(checker, expr);
             }
 
+            if checker.enabled(Rule::UnnecessaryTypeDefault) {
+                if checker.settings.target_version >= PythonVersion::Py313 {
+                    ruff::rules::unnecessary_type_default(checker, expr);
+                }
+            }
+
             if checker.any_enabled(&[
                 Rule::SysVersionSlice3,
                 Rule::SysVersion2,
