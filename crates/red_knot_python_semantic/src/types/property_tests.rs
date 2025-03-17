@@ -24,14 +24,18 @@
 //!   --ignored types::property_tests::stable; do :; done
 //! ```
 //!
-//! If you want to run a specific property test, you can use an environment variable for
-//! custom test data. For example:
+//! If you want to run a specific property test with custom data, you can set the
+//! environment variable `TEST_DATA`. For example:
 //!
 //! ```sh
 //! TEST_DATA='{"t":"Any"}' \
 //!   cargo test -p red_knot_python_semantic -- \
 //!   --ignored types::property_tests::flaky::double_negation_is_identity
 //! ```
+//!
+//! The value of `TEST_DATA` should be a serialized form of the corresponding `TestData`
+//! struct. Refer to the `TestData` definition inside the `type_property_test!` macro
+//! for its detailed structure.
 
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
