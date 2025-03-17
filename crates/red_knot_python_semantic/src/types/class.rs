@@ -827,7 +827,10 @@ impl<'db> From<InstanceType<'db>> for Type<'db> {
 /// places.
 /// Note: good candidates are any classes in `[crate::module_resolver::module::KnownModule]`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(test, derive(strum_macros::EnumIter))]
+#[cfg_attr(
+    test,
+    derive(strum_macros::EnumIter, serde::Serialize, serde::Deserialize)
+)]
 pub enum KnownClass {
     // To figure out where an stdlib symbol is defined, you can go into `crates/red_knot_vendored`
     // and grep for the symbol name in any `.pyi` file.

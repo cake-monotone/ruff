@@ -57,6 +57,7 @@ insta = { workspace = true }
 tempfile = { workspace = true }
 quickcheck = { version = "1.0.3", default-features = false }
 quickcheck_macros = { version = "1.0.0" }
+serde_json = { workspace = true }
 
 [features]
 serde = ["ruff_db/serde", "dep:serde", "ruff_python_ast/serde"]

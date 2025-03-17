@@ -23,6 +23,15 @@
 //! while cargo test --release -p red_knot_python_semantic -- \
 //!   --ignored types::property_tests::stable; do :; done
 //! ```
+//!
+//! If you want to run a specific property test, you can use an environment variable for
+//! custom test data. For example:
+//!
+//! ```sh
+//! TEST_DATA='{"t":"Any"}' \
+//!   cargo test -p red_knot_python_semantic -- \
+//!   --ignored types::property_tests::flaky::double_negation_is_identity
+//! ```
 
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
@@ -34,10 +43,13 @@ use crate::types::{
 };
 use crate::{Db, KnownModule};
 use quickcheck::{Arbitrary, Gen};
+use serde::{Deserialize, Serialize};
+
+const TEST_DATA: &str = "TEST_DATA";
 
 /// A test representation of a type that can be transformed unambiguously into a real Type,
 /// given a db.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Ty {
     Never,
     Unknown,
@@ -45,17 +57,17 @@ pub(crate) enum Ty {
     Any,
     IntLiteral(i64),
     BooleanLiteral(bool),
-    StringLiteral(&'static str),
+    StringLiteral(String),
     LiteralString,
-    BytesLiteral(&'static str),
+    BytesLiteral(String),
     // BuiltinInstance("str") corresponds to an instance of the builtin `str` class
-    BuiltinInstance(&'static str),
+    BuiltinInstance(String),
     /// Members of the `abc` stdlib module
-    AbcInstance(&'static str),
-    AbcClassLiteral(&'static str),
+    AbcInstance(String),
+    AbcClassLiteral(String),
     TypingLiteral,
     // BuiltinClassLiteral("str") corresponds to the builtin `str` class object itself
-    BuiltinClassLiteral(&'static str),
+    BuiltinClassLiteral(String),
     KnownClassInstance(KnownClass),
     Union(Vec<Ty>),
     Intersection {
@@ -64,14 +76,14 @@ pub(crate) enum Ty {
     },
     Tuple(Vec<Ty>),
     SubclassOfAny,
-    SubclassOfBuiltinClass(&'static str),
-    SubclassOfAbcClass(&'static str),
+    SubclassOfBuiltinClass(String),
+    SubclassOfAbcClass(String),
     AlwaysTruthy,
     AlwaysFalsy,
-    BuiltinsFunction(&'static str),
+    BuiltinsFunction(String),
     BuiltinsBoundMethod {
-        class: &'static str,
-        method: &'static str,
+        class: String,
+        method: String,
     },
 }
 
@@ -96,25 +108,25 @@ impl Ty {
             Ty::None => Type::none(db),
             Ty::Any => Type::any(),
             Ty::IntLiteral(n) => Type::IntLiteral(n),
-            Ty::StringLiteral(s) => Type::string_literal(db, s),
+            Ty::StringLiteral(s) => Type::string_literal(db, &s),
             Ty::BooleanLiteral(b) => Type::BooleanLiteral(b),
             Ty::LiteralString => Type::LiteralString,
             Ty::BytesLiteral(s) => Type::bytes_literal(db, s.as_bytes()),
-            Ty::BuiltinInstance(s) => builtins_symbol(db, s)
+            Ty::BuiltinInstance(s) => builtins_symbol(db, &s)
                 .symbol
                 .expect_type()
                 .to_instance(db)
                 .unwrap(),
-            Ty::AbcInstance(s) => known_module_symbol(db, KnownModule::Abc, s)
+            Ty::AbcInstance(s) => known_module_symbol(db, KnownModule::Abc, &s)
                 .symbol
                 .expect_type()
                 .to_instance(db)
                 .unwrap(),
-            Ty::AbcClassLiteral(s) => known_module_symbol(db, KnownModule::Abc, s)
+            Ty::AbcClassLiteral(s) => known_module_symbol(db, KnownModule::Abc, &s)
                 .symbol
                 .expect_type(),
             Ty::TypingLiteral => Type::KnownInstance(KnownInstanceType::Literal),
-            Ty::BuiltinClassLiteral(s) => builtins_symbol(db, s).symbol.expect_type(),
+            Ty::BuiltinClassLiteral(s) => builtins_symbol(db, &s).symbol.expect_type(),
             Ty::KnownClassInstance(known_class) => known_class.to_instance(db),
             Ty::Union(tys) => {
                 UnionType::from_elements(db, tys.into_iter().map(|ty| ty.into_type(db)))
@@ -136,7 +148,7 @@ impl Ty {
             Ty::SubclassOfAny => SubclassOfType::subclass_of_any(),
             Ty::SubclassOfBuiltinClass(s) => SubclassOfType::from(
                 db,
-                builtins_symbol(db, s)
+                builtins_symbol(db, &s)
                     .symbol
                     .expect_type()
                     .expect_class_literal()
@@ -144,7 +156,7 @@ impl Ty {
             ),
             Ty::SubclassOfAbcClass(s) => SubclassOfType::from(
                 db,
-                known_module_symbol(db, KnownModule::Abc, s)
+                known_module_symbol(db, KnownModule::Abc, &s)
                     .symbol
                     .expect_type()
                     .expect_class_literal()
@@ -152,10 +164,10 @@ impl Ty {
             ),
             Ty::AlwaysTruthy => Type::AlwaysTruthy,
             Ty::AlwaysFalsy => Type::AlwaysFalsy,
-            Ty::BuiltinsFunction(name) => builtins_symbol(db, name).symbol.expect_type(),
+            Ty::BuiltinsFunction(name) => builtins_symbol(db, &name).symbol.expect_type(),
             Ty::BuiltinsBoundMethod { class, method } => {
-                let builtins_class = builtins_symbol(db, class).symbol.expect_type();
-                let function = builtins_class.member(db, method).symbol.expect_type();
+                let builtins_class = builtins_symbol(db, &class).symbol.expect_type();
+                let function = builtins_class.member(db, &method).symbol.expect_type();
 
                 create_bound_method(db, function, builtins_class)
             }
@@ -175,11 +187,11 @@ fn arbitrary_core_type(g: &mut Gen) -> Ty {
         Ty::Any,
         int_lit,
         bool_lit,
-        Ty::StringLiteral(""),
-        Ty::StringLiteral("a"),
+        Ty::StringLiteral(String::new()),
+        Ty::StringLiteral("a".to_owned()),
         Ty::LiteralString,
-        Ty::BytesLiteral(""),
-        Ty::BytesLiteral("\x00"),
+        Ty::BytesLiteral(String::new()),
+        Ty::BytesLiteral("\x00".to_owned()),
         Ty::KnownClassInstance(KnownClass::Object),
         Ty::KnownClassInstance(KnownClass::Str),
         Ty::KnownClassInstance(KnownClass::Int),
@@ -192,32 +204,32 @@ fn arbitrary_core_type(g: &mut Gen) -> Ty {
         Ty::KnownClassInstance(KnownClass::TypeAliasType),
         Ty::KnownClassInstance(KnownClass::NoDefaultType),
         Ty::TypingLiteral,
-        Ty::BuiltinClassLiteral("str"),
-        Ty::BuiltinClassLiteral("int"),
-        Ty::BuiltinClassLiteral("bool"),
-        Ty::BuiltinClassLiteral("object"),
-        Ty::BuiltinInstance("type"),
-        Ty::AbcInstance("ABC"),
-        Ty::AbcInstance("ABCMeta"),
+        Ty::BuiltinClassLiteral("str".to_owned()),
+        Ty::BuiltinClassLiteral("int".to_owned()),
+        Ty::BuiltinClassLiteral("bool".to_owned()),
+        Ty::BuiltinClassLiteral("object".to_owned()),
+        Ty::BuiltinInstance("type".to_owned()),
+        Ty::AbcInstance("ABC".to_owned()),
+        Ty::AbcInstance("ABCMeta".to_owned()),
         Ty::SubclassOfAny,
-        Ty::SubclassOfBuiltinClass("object"),
-        Ty::SubclassOfBuiltinClass("str"),
-        Ty::SubclassOfBuiltinClass("type"),
-        Ty::AbcClassLiteral("ABC"),
-        Ty::AbcClassLiteral("ABCMeta"),
-        Ty::SubclassOfAbcClass("ABC"),
-        Ty::SubclassOfAbcClass("ABCMeta"),
+        Ty::SubclassOfBuiltinClass("object".to_owned()),
+        Ty::SubclassOfBuiltinClass("str".to_owned()),
+        Ty::SubclassOfBuiltinClass("type".to_owned()),
+        Ty::AbcClassLiteral("ABC".to_owned()),
+        Ty::AbcClassLiteral("ABCMeta".to_owned()),
+        Ty::SubclassOfAbcClass("ABC".to_owned()),
+        Ty::SubclassOfAbcClass("ABCMeta".to_owned()),
         Ty::AlwaysTruthy,
         Ty::AlwaysFalsy,
-        Ty::BuiltinsFunction("chr"),
-        Ty::BuiltinsFunction("ascii"),
+        Ty::BuiltinsFunction("chr".to_owned()),
+        Ty::BuiltinsFunction("ascii".to_owned()),
         Ty::BuiltinsBoundMethod {
-            class: "str",
-            method: "isascii",
+            class: "str".to_owned(),
+            method: "isascii".to_owned(),
         },
         Ty::BuiltinsBoundMethod {
-            class: "int",
-            method: "bit_length",
+            class: "int".to_owned(),
+            method: "bit_length".to_owned(),
         },
     ])
     .unwrap()
@@ -345,14 +357,75 @@ fn get_cached_db() -> MutexGuard<'static, TestDb> {
 ///
 macro_rules! type_property_test {
     ($test_name:ident, $db:ident, forall types $($types:ident),+ . $property:expr) => {
-        #[quickcheck_macros::quickcheck]
-        #[ignore]
-        fn $test_name($($types: super::Ty),+) -> bool {
-            let db_cached = super::get_cached_db();
-            let $db = &*db_cached;
-            $(let $types = $types.into_type($db);)+
+        mod $test_name {
+            use serde;
+            use serde_json;
 
-            $property
+            use super::super::{Ty, get_cached_db, TEST_DATA};
+            #[allow(unused_imports)]
+            use super::*;
+
+            #[derive(serde::Serialize, serde::Deserialize)]
+            pub(super) struct TestData {
+                $(pub $types: Ty),+
+            }
+
+            pub(super) fn evaluate_property($($types: Ty),+) -> bool {
+                let db_cached = get_cached_db();
+                let $db = &*db_cached;
+
+                $(let $types = $types.into_type($db);)+
+
+                $property
+            }
+
+            pub(super) fn quickcheck_wrapper($($types: Ty),+) -> quickcheck::TestResult {
+                let test_result = evaluate_property($($types.clone()),+);
+
+                if !test_result {
+                    let serialized_data =
+                        serde_json::to_string(&TestData{ $($types),+ })
+                        .expect("Failed to serialize test data");
+                    let full_testname = module_path!()
+                        .strip_prefix("red_knot_python_semantic::")
+                        .expect("test name should start with `red_knot_python_semantic`");
+
+                    let rerun_command = format!(
+                        "{TEST_DATA}='{serialized_data}' cargo test -p red_knot_python_semantic -- --ignored {full_testname}",
+                    );
+
+                    return quickcheck::TestResult::error(
+                        format!(
+                            "{}\n\n{}\n{}\n",
+                            "Property test failed.",
+                            "To rerun this property test, enter the command below:",
+                            rerun_command,
+                        )
+                    );
+                }
+
+                quickcheck::TestResult::from_bool(test_result)
+            }
+        }
+
+        #[test]
+        #[ignore]
+        fn $test_name() {
+            let raw_test_data = std::env::var(super::TEST_DATA).ok();
+
+            if let Some(raw_test_data) = raw_test_data {
+                let test_data: $test_name::TestData =
+                    serde_json::from_str(&raw_test_data)
+                    .expect("Failed to deserialize the test data");
+                $(let $types = test_data.$types;)+
+
+                assert!($test_name::evaluate_property($($types),+));
+            } else {
+                quickcheck::quickcheck(
+                    $test_name::quickcheck_wrapper
+                    as fn($($types: super::Ty),+) -> quickcheck::TestResult
+                );
+            }
         }
     };
     // A property test with a logical implication.
@@ -362,7 +435,8 @@ macro_rules! type_property_test {
 }
 
 fn intersection<'db>(db: &'db TestDb, tys: impl IntoIterator<Item = Type<'db>>) -> Type<'db> {
-    let mut builder = IntersectionBuilder::new(db);
+    let mut builder: IntersectionBuilder<'_> = IntersectionBuilder::new(db);
+
     for ty in tys {
         builder = builder.add_positive(ty);
     }
@@ -373,6 +447,7 @@ fn union<'db>(db: &'db TestDb, tys: impl IntoIterator<Item = Type<'db>>) -> Type
     UnionType::from_elements(db, tys)
 }
 
+#[cfg(test)]
 mod stable {
     use super::union;
     use crate::types::Type;
@@ -529,6 +604,7 @@ mod stable {
 /// Similar issues exist for intersection types. Once this is resolved, we can move these
 /// tests to the `stable` section. In the meantime, it can still be useful to run these
 /// tests (using [`types::property_tests::flaky`]), to see if there are any new obvious bugs.
+#[cfg(test)]
 mod flaky {
     use itertools::Itertools;
 

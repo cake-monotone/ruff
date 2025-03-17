@@ -2559,6 +2559,7 @@ dependencies = [
  "salsa",
  "schemars",
  "serde",
+ "serde_json",
  "smallvec",
  "static_assertions",
  "strum",
