@@ -77,8 +77,23 @@ fn all_narrowing_constraints_for_expression<'db>(
     NarrowingConstraintsBuilder::new(db, PredicateNode::Expression(expression), true).finish()
 }
 
+fn narrow_cycle_recover<'db>(
+    _db: &'db dyn Db,
+    _value: &Option<NarrowingConstraints<'db>>,
+    _count: u32,
+    _expression: Expression<'db>,
+) -> salsa::CycleRecoveryAction<Option<NarrowingConstraints<'db>>> {
+    salsa::CycleRecoveryAction::Iterate
+}
+fn narrow_cycle_initial<'db>(
+    _db: &'db dyn Db,
+    _expression: Expression<'db>,
+) -> Option<NarrowingConstraints<'db>> {
+    None
+}
+
 #[allow(clippy::ref_option)]
-#[salsa::tracked(return_ref)]
+#[salsa::tracked(return_ref, cycle_fn=narrow_cycle_recover, cycle_initial=narrow_cycle_initial)]
 fn all_negative_narrowing_constraints_for_expression<'db>(
     db: &'db dyn Db,
     expression: Expression<'db>,
